@@ -39,7 +39,7 @@ fn main() {
         }
 
         // Compute screen parameters
-        let (w, h) = termion::terminal_size().unwrap_or((80, 40));
+        let (_w, h) = termion::terminal_size().unwrap_or((80, 40));
         let line_time = screen_time / h as u32;
 
         // New screen
