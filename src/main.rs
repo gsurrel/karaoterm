@@ -1,16 +1,22 @@
 extern crate termion;
 
 use clap::Clap;
+use rodio::Source;
 use std::io::Write;
 use std::ops::Sub;
 
-/// Reads a subtitle (.srt) file at the right pace for singing karaoke, straight from your terminal
+/// Reads a subtitle (.srt) file at the right pace for singing karaoke along with optional music
+/// playback, straight from your terminal.
 #[derive(Clap)]
 #[clap(version = "1.0", author = "Grégoire Surrel")]
 struct Opts {
-    /// Path to a subtitle file
+    /// Path to a lyrics file (srt)
     #[clap(short, long)]
-    subtitle: String,
+    lyrics: String,
+
+    /// Path to a music file (mp3, wav, ogg, and flac)
+    #[clap(short, long)]
+    song: Option<String>,
 
     /// The time in seconds a full terminal screen lasts
     #[clap(short, long, default_value = "5")]
@@ -21,11 +27,15 @@ fn main() {
     // Parse the command-line arguments
     let opts: Opts = Opts::parse();
 
+    // Get a audio handle
+    let device = rodio::default_output_device().unwrap();
+    let mut playing = false;
+
     // Define how much time there is to go from the bottom of the screen to the top
     let screen_time = std::time::Duration::from_secs(opts.time_screen as u64);
 
-    // Collect all the subtitles items from the file
-    let items = srtparse::from_file(opts.subtitle).unwrap();
+    // Collect all the lyrics items from the file
+    let items = srtparse::from_file(opts.lyrics).unwrap();
 
     // Be time-aware :)
     let start_time = std::time::SystemTime::now();
@@ -39,7 +49,7 @@ fn main() {
         termion::cursor::Hide
     );
 
-    // Loop while there are some subtitles to read, with little intro and ending time added
+    // Loop while there are some lyrics to read, with little intro and ending time added
     loop {
         // Get time and quit of last sub has passed
         let now = std::time::SystemTime::now()
@@ -51,6 +61,14 @@ fn main() {
             return;
         }
 
+        // Start playing if not already. We can unwrap as we test if there is an audio file provided
+        if !playing && now > 2 * screen_time / 3 && opts.song.is_some() {
+            playing = true;
+            let file = std::fs::File::open(opts.song.clone().unwrap()).unwrap();
+            let source = rodio::Decoder::new(std::io::BufReader::new(file)).unwrap();
+            rodio::play_raw(&device, source.convert_samples());
+        }
+
         // Get the screen height and define the time for each line
         let (_w, h) = termion::terminal_size().unwrap_or((80, 40));
         let line_time = screen_time / h as u32;
@@ -60,12 +78,13 @@ fn main() {
 
         // For each line of the terminal, display what it should show
         for line_nb in 1..=h {
-            // Compute the absolute time of the line to match with the subtitles
+            // Compute the absolute time of the line to match with the lyrics
             let line_time = now + (line_time * line_nb as u32);
             if line_time < screen_time {
                 // Skip lines with negative time
                 continue;
             }
+
             let line_time = line_time.sub(screen_time);
 
             // Set the colors: red for the past, green for the current line, and white for the future
